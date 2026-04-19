@@ -2,3 +2,4 @@
 zig-out/
 .env
 server/node_modules/
+server/dist/
