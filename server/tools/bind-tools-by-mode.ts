@@ -1,10 +1,13 @@
 import { ChatOpenAI } from "@langchain/openai";
+import { READ_ONLY_TOOLS } from "./index";
 
-export function bindToolsByMode(model: ChatOpenAI, mode: "plan" | "edit" | "ask") {
-  // Bind tools to model based on mode
+export type AgentMode = "plan" | "edit" | "ask";
 
+export function bindToolsByMode(model: ChatOpenAI, mode: AgentMode) {
   switch (mode) {
-
+    case "ask":
+    case "plan":
+    case "edit":
+      return model.bindTools([...READ_ONLY_TOOLS]);
   }
-
 }
