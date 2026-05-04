@@ -1,23 +1,30 @@
-import { Router, type Response } from "express";
+import { Router } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
+
 import { AppError } from "../../error";
-import { createModel } from "../../models/create-model";
+import { getGraph } from "../../graph/build-graph";
+import {
+  ModeSchema,
+  ProviderSchema,
+  ModelNameSchema,
+} from "../../graph/state";
+import {
+  streamGraphToSse,
+  writeSseEvent,
+  writeSseHeaders,
+  type RunOutcome,
+} from "./sse";
 
 const router = Router();
 
 const QueryRequestSchema = z.object({
-  provider: z.literal("openai"),
-  modelName: z.enum(["gpt-4.1", "gpt-4.1-mini"]),
+  provider: ProviderSchema,
+  modelName: ModelNameSchema,
+  mode: ModeSchema,
   prompt: z.string().min(1),
-  mode: z.enum(["plan", "edit", "ask"]),
+  threadId: z.string().min(1).optional(),
 });
-
-type QueryRequest = z.infer<typeof QueryRequestSchema>;
-
-function writeSseEvent(res: Response, event: string, data: unknown) {
-  res.write(`event: ${event}\n`);
-  res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
 
 router.post("/", async (req, res) => {
   const parsed = QueryRequestSchema.safeParse(req.body);
@@ -31,31 +38,37 @@ router.post("/", async (req, res) => {
     });
   }
 
-  const body: QueryRequest = parsed.data;
+  const { provider, modelName, mode, prompt } = parsed.data;
+  const threadId = parsed.data.threadId ?? randomUUID();
 
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
+  writeSseHeaders(res);
+  writeSseEvent(res, "run_started", { threadId, mode });
 
-  res.flushHeaders?.();
+  let outcome: RunOutcome = "done";
+  try {
+    const graph = getGraph();
+    const stream = await graph.stream(
+      { messages: [{ role: "user", content: prompt }] },
+      {
+        streamMode: ["messages", "updates"],
+        configurable: {
+          thread_id: threadId,
+          mode,
+          provider,
+          modelName,
+        },
+      },
+    );
 
-  writeSseEvent(res, "run_started", {
-    provider: body.provider,
-    modelName: body.modelName,
-    mode: body.mode,
-  });
+    outcome = await streamGraphToSse(res, stream);
+  } catch (err) {
+    outcome = "error";
+    writeSseEvent(res, "error", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 
-  const model = createModel({
-    provider: body.provider,
-    modelName: body.modelName,
-  });
-
-  writeSseEvent(res, "status", {
-    message: "Model created",
-    modelCreated: !!model,
-  });
-
-  writeSseEvent(res, "run_completed", { ok: true });
+  writeSseEvent(res, "run_ended", { reason: outcome });
   res.end();
 });
 
