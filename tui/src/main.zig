@@ -2,19 +2,11 @@ const std = @import("std");
 
 const App = @import("app.zig");
 
-pub fn main(init: std.process.Init.Minimal) !void {
-    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = debug_allocator.deinit();
-    const gpa = debug_allocator.allocator();
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
 
-    var evented: std.Io.Evented = undefined;
-    try evented.init(gpa, .{
-        .argv0 = .init(init.args),
-        .environ = init.environ,
-        .backing_allocator_needs_mutex = false,
-    });
-    defer evented.deinit();
+    const io = init.io; // default backend chosen by Zig
 
-    var app = try App.init(gpa, evented.io());
+    var app = App.init(gpa, io);
     try app.run();
 }
