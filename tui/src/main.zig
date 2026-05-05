@@ -4,9 +4,8 @@ const App = @import("app.zig");
 
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
-
     const io = init.io; // default backend chosen by Zig
 
-    var app = App.init(gpa, io);
-    try app.run();
+    _ = App.init(gpa, io);
+    // try app.run();
 }
