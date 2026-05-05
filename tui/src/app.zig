@@ -1,62 +1,46 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Io = std.Io;
-const FileReader = Io.File.Reader;
-const FileWriter = Io.File.Writer;
-
-const parser = @import("commands/parser.zig");
+const vaxis = @import("vaxis");
+const vxfw = vaxis.vxfw;
 
 const App = @This();
 
-gpa: Allocator,
-io: Io,
-should_quit: bool = false,
+gpa: std.mem.Allocator,
 
-pub fn init(gpa: Allocator, io: Io) App {
+pub fn init(gpa: std.mem.Allocator) !App {
+    return .{ .gpa = gpa };
+}
+
+pub fn deinit(self: *App) void {
+    _ = self;
+}
+
+pub fn widget(self: *App) vxfw.Widget {
     return .{
-        .gpa = gpa,
-        .io = io,
+        .userdata = self,
+        .eventHandler = onEvent,
+        .drawFn = onDraw,
     };
 }
 
-pub fn run(self: *App) !void {
-    var stdin_buf: [4096]u8 = undefined;
-    var stdout_buf: [4096]u8 = undefined;
-
-    var stdin_reader: FileReader = .init(.stdin(), self.io, &stdin_buf);
-    var stdout_writer: FileWriter = .init(.stdout(), self.io, &stdout_buf);
-
-    const reader = &stdin_reader.interface;
-    const writer = &stdout_writer.interface;
-
-    while (!self.should_quit) {
-        try writer.writeAll("> ");
-        try writer.flush();
-
-        const maybe_line = try reader.takeDelimiter('\n');
-        const line = maybe_line orelse {
-            self.should_quit = true;
-            break;
-        };
-
-        const parsed = parser.parse(line);
-        try self.handleParsed(parsed, writer);
+fn onEvent(ptr: *anyopaque, ctx: *vxfw.EventContext, ev: vxfw.Event) anyerror!void {
+    const self: *App = @ptrCast(@alignCast(ptr));
+    _ = self;
+    switch (ev) {
+        .key_press => |k| {
+            if (k.matches('c', .{ .ctrl = true })) ctx.quit = true;
+        },
+        else => {},
     }
-
-    try writer.flush();
 }
 
-fn handleParsed(
-    self: *App,
-    parsed: parser.ParsedInput,
-    writer: *Io.Writer,
-) !void {
-    switch (parsed) {
-        .empty => {},
-        .quit => self.should_quit = true,
-        .text => |text| {
-            try writer.print("text: {s}\n", .{text});
-            try writer.flush();
-        },
-    }
+fn onDraw(ptr: *anyopaque, ctx: vxfw.DrawContext) Allocator.Error!vxfw.Surface {
+    const self: *App = @ptrCast(@alignCast(ptr));
+    const size = ctx.max.size();
+    return .{
+        .size = size,
+        .widget = self.widget(),
+        .buffer = &.{},
+        .children = &.{},
+    };
 }
