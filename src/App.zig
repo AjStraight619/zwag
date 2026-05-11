@@ -231,7 +231,7 @@ fn runStream(self: *App, history: []const Conversation.Message) anyerror!void {
                 .assistant => .assistant,
                 .system => .assistant,
             },
-            .content = m.content,
+            .content = m.content.items,
         };
     }
 
@@ -330,7 +330,7 @@ fn renderTranscript(self: *App, body: vaxis.Window) !void {
     var content_h: u16 = 0;
     for (messages, 0..) |msg, i| {
         if (i > 0) content_h += 1;
-        content_h += measureHeight(body, msg.content);
+        content_h += measureHeight(body, msg.content.items);
     }
 
     const thinking_row_h: u16 = if (self.assistant_thinking) 1 else 0;
@@ -346,16 +346,16 @@ fn renderTranscript(self: *App, body: vaxis.Window) !void {
     var y: u16 = 0;
     for (messages, 0..) |msg, i| {
         if (i > 0) y += 1;
-        const h = measureHeight(view_win, msg.content);
+        const h = measureHeight(view_win, msg.content.items);
         const msg_win = view_win.child(.{ .x_off = 0, .y_off = @intCast(y), .width = view_win.width, .height = h });
         const style: vaxis.Style = if (msg.role == .user)
-            .{ .bg = .{ .rgb = .{ 0x2d, 0x2d, 0x35 } } }
+            .{ .bg = theme.user_bg }
         else
             .{};
         if (msg.role == .user) {
             msg_win.fill(.{ .char = .{ .grapheme = " ", .width = 1 }, .style = style });
         }
-        _ = msg_win.printSegment(.{ .text = msg.content, .style = style }, .{ .wrap = .grapheme });
+        _ = msg_win.printSegment(.{ .text = msg.content.items, .style = style }, .{ .wrap = .grapheme });
         y += h;
     }
 

@@ -7,7 +7,7 @@ pub const Role = enum { user, assistant, system };
 
 pub const Message = struct {
     role: Role,
-    content: []u8,
+    content: std.ArrayList(u8),
 };
 
 gpa: Allocator,
@@ -18,34 +18,26 @@ pub fn init(gpa: Allocator) Conversation {
 }
 
 pub fn deinit(self: *Conversation) void {
-    for (self.messages.items) |m| self.gpa.free(m.content);
+    for (self.messages.items) |*m| m.content.deinit(self.gpa);
     self.messages.deinit(self.gpa);
 }
 
 pub fn appendUser(self: *Conversation, text: []const u8) !void {
-    const owned = try self.gpa.dupe(u8, text);
-    errdefer self.gpa.free(owned);
-    try self.messages.append(self.gpa, .{ .role = .user, .content = owned });
+    var content: std.ArrayList(u8) = .empty;
+    errdefer content.deinit(self.gpa);
+    try content.appendSlice(self.gpa, text);
+    try self.messages.append(self.gpa, .{ .role = .user, .content = content });
 }
 
-/// Push an empty assistant message. Tokens stream into it via appendToken.
 pub fn beginAssistant(self: *Conversation) !void {
-    const empty = try self.gpa.alloc(u8, 0);
-    errdefer self.gpa.free(empty);
-    try self.messages.append(self.gpa, .{ .role = .assistant, .content = empty });
+    try self.messages.append(self.gpa, .{ .role = .assistant, .content = .empty });
 }
 
-/// Append text onto the last assistant message's content.
 pub fn appendToken(self: *Conversation, text: []const u8) !void {
     std.debug.assert(self.messages.items.len > 0);
     const last = &self.messages.items[self.messages.items.len - 1];
     std.debug.assert(last.role == .assistant);
-
-    const new = try self.gpa.alloc(u8, last.content.len + text.len);
-    @memcpy(new[0..last.content.len], last.content);
-    @memcpy(new[last.content.len..], text);
-    self.gpa.free(last.content);
-    last.content = new;
+    try last.content.appendSlice(self.gpa, text);
 }
 
 const Serialized = struct {
