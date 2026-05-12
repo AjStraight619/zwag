@@ -9,12 +9,17 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const manifest_mod = b.createModule(.{
+        .root_source_file = b.path("build.zig.zon"),
+    });
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "vaxis", .module = vaxis.module("vaxis") },
+            .{ .name = "manifest", .module = manifest_mod },
         },
     });
 

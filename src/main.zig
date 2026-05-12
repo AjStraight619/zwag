@@ -3,6 +3,8 @@ const vaxis = @import("vaxis");
 const App = @import("App.zig");
 const log = @import("log.zig");
 const utils = @import("utils.zig");
+const cli = @import("cli/cli.zig");
+const Provider = @import("net/Provider.zig").Provider;
 
 pub const panic = vaxis.panic_handler;
 
@@ -12,18 +14,27 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main(init: std.process.Init) !void {
+    log.init(init.io) catch |err| std.debug.print("log: {}\n", .{err});
+    defer log.deinit();
+
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+
+    if (args.len > 1) return cli.run(init, args);
+    return runTui(init);
+}
+
+fn runTui(init: std.process.Init) !void {
     const io = init.io;
     const gpa = init.gpa;
-
-    log.init(io) catch |err| std.debug.print("log: {}\n", .{err});
-    defer log.deinit();
 
     utils.loadEnvFile(io, gpa, init.environ_map, ".env") catch |err| {
         std.log.warn(".env load: {}", .{err});
     };
 
-    const api_key = init.environ_map.get("ANTHROPIC_API_KEY") orelse {
-        std.log.err("ANTHROPIC_API_KEY not set", .{});
+    const provider: Provider = .anthropic;
+    const env_key = provider.envKey() orelse return error.MissingApiKey;
+    const api_key = init.environ_map.get(env_key) orelse {
+        std.log.err("{s} not set", .{env_key});
         return error.MissingApiKey;
     };
 
