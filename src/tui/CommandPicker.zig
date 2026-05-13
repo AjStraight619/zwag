@@ -14,13 +14,6 @@ pub const Command = struct {
 pub const builtins = [_]Command{
     .{ .name = "/help", .desc = "Show available commands" },
     .{ .name = "/clear", .desc = "Clear the conversation transcript" },
-    .{ .name = "/provider", .desc = "Switch LLM provider (openai|anthropic|ollama)" },
-    .{ .name = "/model", .desc = "Switch the active model" },
-    .{ .name = "/compact", .desc = "Compact the context window via summary" },
-    .{ .name = "/history", .desc = "Browse past sessions" },
-    .{ .name = "/export", .desc = "Export the current transcript" },
-    .{ .name = "/tools", .desc = "List available tools" },
-    .{ .name = "/cost", .desc = "Show token usage and cost" },
     .{ .name = "/quit", .desc = "Exit zwag" },
 };
 

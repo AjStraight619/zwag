@@ -29,6 +29,13 @@ pub fn appendUser(self: *Conversation, text: []const u8) !void {
     try self.messages.append(self.gpa, .{ .role = .user, .content = content });
 }
 
+pub fn appendSystem(self: *Conversation, text: []const u8) !void {
+    var content: std.ArrayList(u8) = .empty;
+    errdefer content.deinit(self.gpa);
+    try content.appendSlice(self.gpa, text);
+    try self.messages.append(self.gpa, .{ .role = .system, .content = content });
+}
+
 pub fn beginAssistant(self: *Conversation) !void {
     try self.messages.append(self.gpa, .{ .role = .assistant, .content = .empty });
 }

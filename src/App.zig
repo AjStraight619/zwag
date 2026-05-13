@@ -10,6 +10,7 @@ const TextArea = @import("tui/TextArea.zig");
 const CommandPicker = @import("tui/CommandPicker.zig");
 const Transcript = @import("tui/Transcript.zig");
 const Stream = @import("agent/Stream.zig");
+const slash = @import("tui/slash.zig");
 const theme = @import("theme.zig");
 
 const log = std.log.scoped(.ui);
@@ -32,6 +33,8 @@ mode: Mode = .normal,
 picker: CommandPicker,
 
 transcript: Transcript,
+
+should_exit: bool = false,
 
 pub fn init(
     gpa: Allocator,
@@ -67,6 +70,7 @@ pub fn run(self: *App) !void {
     while (true) {
         const ev = try self.loop.nextEvent();
         if (try self.handle(ev)) return;
+        if (self.should_exit) return;
         try self.render();
     }
 }
@@ -105,7 +109,15 @@ fn handle(self: *App, event: Event) !bool {
                     return false;
                 }
                 if (key.matches(vaxis.Key.enter, .{})) {
-                    if (self.picker.current()) |cmd| try self.completePick(cmd);
+                    if (self.picker.current()) |cmd| {
+                        if (slash.parse(cmd.name)) |sc| {
+                            self.input.clearAndFree();
+                            try self.refreshMode();
+                            try slash.dispatch(self, sc);
+                        } else {
+                            try self.completePick(cmd);
+                        }
+                    }
                     return false;
                 }
             }
@@ -166,7 +178,19 @@ fn submit(self: *App) !void {
     defer self.gpa.free(text);
     if (text.len == 0) return;
 
-    // TODO: Check if trimmed text starts with a / -> this should not get sent to the model (no-op on this code path and open a sub menu). Can catch earlier maybe?
+    const trimmed = std.mem.trim(u8, text, " \t\n");
+
+    if (slash.parse(trimmed)) |cmd| {
+        try slash.dispatch(self, cmd);
+        return;
+    }
+    if (trimmed.len > 0 and trimmed[0] == '/') {
+        const note = try std.fmt.allocPrint(self.gpa, "unknown command: {s}", .{trimmed});
+        defer self.gpa.free(note);
+        try self.conversation.appendSystem(note);
+        self.transcript.snapToBottom();
+        return;
+    }
 
     log.info("submit (len={d}) thinking_enabled=true", .{text.len});
     try self.conversation.appendUser(text);
