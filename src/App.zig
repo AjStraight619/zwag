@@ -3,28 +3,18 @@ const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const vaxis = @import("vaxis");
 
-const Client = @import("net/Client.zig");
-const stream_event = @import("net/event.zig");
+const Loop = @import("tui/Loop.zig");
+const Event = Loop.Event;
 const Conversation = @import("conversation/Conversation.zig");
 const TextArea = @import("tui/TextArea.zig");
 const CommandPicker = @import("tui/CommandPicker.zig");
+const Transcript = @import("tui/Transcript.zig");
+const Stream = @import("agent/Stream.zig");
 const theme = @import("theme.zig");
 
 const log = std.log.scoped(.ui);
 
 const App = @This();
-
-pub const Event = union(enum) {
-    key_press: vaxis.Key,
-    winsize: vaxis.Winsize,
-    text_delta: []u8,
-    thinking_start,
-    thinking_end,
-    err: []u8,
-    stream_done,
-};
-
-pub const Loop = vaxis.Loop(Event);
 
 pub const Mode = enum { normal, picker };
 
@@ -33,21 +23,15 @@ io: Io,
 tty: *vaxis.Tty,
 vx: *vaxis.Vaxis,
 loop: *Loop,
-client: Client,
+stream: Stream,
 
 input: TextArea,
 conversation: Conversation,
-in_flight: ?Io.Future(anyerror!void) = null,
 
 mode: Mode = .normal,
 picker: CommandPicker,
 
-worker_in_thinking: bool = false,
-assistant_thinking: bool = false,
-
-transcript_view: ?vaxis.widgets.View = null,
-scroll_y: usize = 0,
-auto_scroll: bool = true,
+transcript: Transcript,
 
 pub fn init(
     gpa: Allocator,
@@ -63,20 +47,20 @@ pub fn init(
         .tty = tty,
         .vx = vx,
         .loop = loop,
-        .client = try Client.init(gpa, io, api_key, Client.DEFAULT_BASE_URL),
+        .stream = try Stream.init(gpa, io, loop, api_key),
         .input = .init(gpa),
         .conversation = .init(gpa),
         .picker = try CommandPicker.init(gpa, &CommandPicker.builtins),
+        .transcript = .{ .gpa = gpa },
     };
 }
 
 pub fn deinit(self: *App) void {
-    if (self.in_flight) |*f| f.cancel(self.io) catch {};
+    self.stream.deinit();
     self.input.deinit();
     self.picker.deinit();
-    self.client.deinit();
     self.conversation.deinit();
-    if (self.transcript_view) |*v| v.deinit();
+    self.transcript.deinit();
 }
 
 pub fn run(self: *App) !void {
@@ -88,6 +72,8 @@ pub fn run(self: *App) !void {
 }
 
 fn handle(self: *App, event: Event) !bool {
+    defer Loop.freeOwned(self.gpa, event);
+    self.stream.dispatch(event);
     switch (event) {
         .key_press => |key| {
             log.debug("key cp={d} shift={} ctrl={} alt={} text={?s}", .{
@@ -95,13 +81,11 @@ fn handle(self: *App, event: Event) !bool {
             });
             if (key.matches('c', .{ .ctrl = true })) return true;
             if (key.matches(vaxis.Key.page_up, .{})) {
-                self.scroll_y -|= 32;
-                self.auto_scroll = false;
+                self.transcript.pageUp();
                 return false;
             }
             if (key.matches(vaxis.Key.page_down, .{})) {
-                self.scroll_y +|= 32;
-                self.auto_scroll = false;
+                self.transcript.pageDown();
                 return false;
             }
 
@@ -142,33 +126,17 @@ fn handle(self: *App, event: Event) !bool {
         },
         .winsize => |ws| try self.vx.resize(self.gpa, self.tty.writer(), ws),
         .text_delta => |text| {
-            defer self.gpa.free(text);
             try self.ensureAssistant();
             try self.conversation.appendToken(text);
         },
-        .thinking_start => {
-            log.info("main: thinking_start received → indicator on", .{});
-            self.assistant_thinking = true;
-        },
-        .thinking_end => {
-            log.info("main: thinking_end received → indicator off", .{});
-            self.assistant_thinking = false;
-        },
+        .thinking_start, .thinking_end => {},
         .err => |msg| {
-            defer self.gpa.free(msg);
             log.err("event: {s}", .{msg});
             try self.ensureAssistant();
             self.conversation.appendToken("[error] ") catch {};
             self.conversation.appendToken(msg) catch {};
         },
-        .stream_done => {
-            log.info("stream done", .{});
-            self.assistant_thinking = false;
-            if (self.in_flight) |*f| {
-                f.await(self.io) catch |err| log.err("stream: {}", .{err});
-                self.in_flight = null;
-            }
-        },
+        .stream_done => log.info("stream done", .{}),
     }
     return false;
 }
@@ -192,7 +160,7 @@ fn completePick(self: *App, cmd: CommandPicker.Command) !void {
 }
 
 fn submit(self: *App) !void {
-    if (self.in_flight != null) return;
+    if (self.stream.isActive()) return;
 
     const text = try self.input.toOwnedSlice();
     defer self.gpa.free(text);
@@ -200,80 +168,15 @@ fn submit(self: *App) !void {
 
     log.info("submit (len={d}) thinking_enabled=true", .{text.len});
     try self.conversation.appendUser(text);
-    self.auto_scroll = true;
+    self.transcript.snapToBottom();
 
-    const history = self.conversation.messages.items;
-    self.in_flight = try self.io.concurrent(runStream, .{ self, history });
+    try self.stream.start(self.conversation.messages.items);
 }
 
 fn ensureAssistant(self: *App) !void {
     const msgs = self.conversation.messages.items;
     if (msgs.len == 0 or msgs[msgs.len - 1].role != .assistant) {
         try self.conversation.beginAssistant();
-    }
-}
-
-fn postOwnedEvent(self: *App, comptime field: []const u8, text: []const u8) !void {
-    const owned = try self.gpa.dupe(u8, text);
-    errdefer self.gpa.free(owned);
-    try self.loop.postEvent(@unionInit(Event, field, owned));
-}
-
-fn runStream(self: *App, history: []const Conversation.Message) anyerror!void {
-    defer self.loop.postEvent(.stream_done) catch {};
-
-    const api_messages = try self.gpa.alloc(Client.Message, history.len);
-    defer self.gpa.free(api_messages);
-    for (history, 0..) |m, i| {
-        api_messages[i] = .{
-            .role = switch (m.role) {
-                .user => .user,
-                .assistant => .assistant,
-                .system => .assistant,
-            },
-            .content = m.content.items,
-        };
-    }
-
-    const req: Client.MessageRequest = .{
-        .model = "claude-haiku-4-5-20251001",
-        .messages = api_messages,
-        .thinking = .{},
-    };
-
-    self.client.streamMessages(req, self, onSse) catch |err| {
-        self.postOwnedEvent("err", @errorName(err)) catch {};
-        return err;
-    };
-}
-
-fn onSse(self: *App, ev: stream_event.StreamEvent) anyerror!void {
-    log.debug("sse event: {s}", .{@tagName(ev)});
-    switch (ev) {
-        .content_block_start => |b| {
-            log.debug("content_block_start type={s}", .{b.content_block.type});
-            if (std.mem.eql(u8, b.content_block.type, "thinking")) {
-                log.info("worker: entering thinking block", .{});
-                self.worker_in_thinking = true;
-                try self.loop.postEvent(.thinking_start);
-            }
-        },
-        .content_block_delta => |d| {
-            log.debug("content_block_delta delta_type={s} text_present={}", .{
-                d.delta.type, d.delta.text != null,
-            });
-            const text = d.delta.text orelse return;
-            try self.postOwnedEvent("text_delta", text);
-        },
-        .content_block_stop => {
-            if (self.worker_in_thinking) {
-                log.info("worker: exiting thinking block", .{});
-                self.worker_in_thinking = false;
-                try self.loop.postEvent(.thinking_end);
-            }
-        },
-        .err => |e| try self.postOwnedEvent("err", e.@"error".message),
-        else => {},
     }
 }
 
@@ -297,7 +200,11 @@ fn render(self: *App) !void {
         .width = win.width -| 2,
         .height = win.height -| (input_box_h + picker_box_h + 1),
     });
-    try self.renderTranscript(body);
+    const status_label: ?[]const u8 = switch (self.stream.phase) {
+        .idle, .responding => null,
+        .thinking => "thinking…",
+    };
+    try self.transcript.render(body, self.conversation.messages.items, status_label);
 
     const input_box = win.child(.{
         .x_off = 0,
@@ -322,78 +229,3 @@ fn render(self: *App) !void {
     try self.vx.render(self.tty.writer());
 }
 
-fn renderTranscript(self: *App, body: vaxis.Window) !void {
-    const messages = self.conversation.messages.items;
-    if (messages.len == 0 and !self.assistant_thinking) return;
-    if (body.width == 0) return;
-
-    var content_h: u16 = 0;
-    for (messages, 0..) |msg, i| {
-        if (i > 0) content_h += 1;
-        content_h += measureHeight(body, msg.content.items);
-    }
-
-    const thinking_row_h: u16 = if (self.assistant_thinking) 1 else 0;
-    const sep_before_thinking: u16 = if (self.assistant_thinking and content_h > 0) 1 else 0;
-    const total_h = content_h + sep_before_thinking + thinking_row_h;
-    if (total_h == 0) return;
-
-    try self.ensureView(body.width, total_h);
-    const view = &self.transcript_view.?;
-    const view_win = view.window();
-    view_win.clear();
-
-    var y: u16 = 0;
-    for (messages, 0..) |msg, i| {
-        if (i > 0) y += 1;
-        const h = measureHeight(view_win, msg.content.items);
-        const msg_win = view_win.child(.{ .x_off = 0, .y_off = @intCast(y), .width = view_win.width, .height = h });
-        const style: vaxis.Style = if (msg.role == .user)
-            .{ .bg = theme.user_bg }
-        else
-            .{};
-        if (msg.role == .user) {
-            msg_win.fill(.{ .char = .{ .grapheme = " ", .width = 1 }, .style = style });
-        }
-        _ = msg_win.printSegment(.{ .text = msg.content.items, .style = style }, .{ .wrap = .grapheme });
-        y += h;
-    }
-
-    if (self.assistant_thinking) {
-        if (content_h > 0) y += 1;
-        const status_win = view_win.child(.{
-            .x_off = 0,
-            .y_off = @intCast(y),
-            .width = view_win.width,
-            .height = 1,
-        });
-        _ = status_win.printSegment(.{
-            .text = "thinking…",
-            .style = .{ .fg = theme.accent_dim },
-        }, .{});
-    }
-
-    const max_scroll: usize = if (total_h > body.height) total_h - body.height else 0;
-    if (self.auto_scroll) self.scroll_y = max_scroll;
-    self.scroll_y = @min(self.scroll_y, max_scroll);
-    if (self.scroll_y >= max_scroll) self.auto_scroll = true;
-
-    view.draw(body, .{ .y_off = @intCast(self.scroll_y) });
-}
-
-fn ensureView(self: *App, width: u16, height: u16) !void {
-    if (self.transcript_view) |*v| {
-        if (v.screen.width == width and v.screen.height >= height) return;
-        v.deinit();
-        self.transcript_view = null;
-    }
-    self.transcript_view = try vaxis.widgets.View.init(self.gpa, .{ .width = width, .height = height });
-}
-
-fn measureHeight(window: vaxis.Window, text: []const u8) u16 {
-    const measured = window.printSegment(.{ .text = text }, .{
-        .wrap = .grapheme,
-        .commit = false,
-    });
-    return measured.row + 1;
-}

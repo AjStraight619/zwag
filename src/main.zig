@@ -1,6 +1,7 @@
 const std = @import("std");
 const vaxis = @import("vaxis");
 const App = @import("App.zig");
+const Loop = @import("tui/Loop.zig");
 const log = @import("log.zig");
 const utils = @import("utils.zig");
 const cli = @import("cli/cli.zig");
@@ -45,7 +46,7 @@ fn runTui(init: std.process.Init) !void {
     var vx = try vaxis.init(io, gpa, init.environ_map, .{});
     defer vx.deinit(gpa, tty.writer());
 
-    var loop: App.Loop = .init(io, &tty, &vx);
+    var loop: Loop = .init(io, &tty, &vx);
     try loop.start();
     defer loop.stop();
 
