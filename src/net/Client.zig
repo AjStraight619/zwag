@@ -1,3 +1,7 @@
+//! HTTP client for the Anthropic Messages API. streamMessages drives
+//! an SSE response synchronously and invokes a caller-supplied callback
+//! per decoded event.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;

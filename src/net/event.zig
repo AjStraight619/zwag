@@ -42,6 +42,8 @@ pub const StreamEvent = union(enum) {
     message_stop,
     ping,
     err: ErrorPayload,
+    /// Forward-compat hook: any event name we don't recognize lands here
+    /// instead of failing the stream.
     unknown: sse.Event,
 };
 

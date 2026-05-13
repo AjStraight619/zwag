@@ -1,3 +1,6 @@
+//! Process-global file logger. Writes are mutex-serialized so the
+//! main thread and SSE worker can't interleave bytes.
+
 const std = @import("std");
 
 const State = struct {

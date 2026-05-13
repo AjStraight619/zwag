@@ -1,3 +1,6 @@
+//! Thin wrapper around vaxis.Loop that owns the app's Event union.
+//! All inter-thread communication flows through here.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const vaxis = @import("vaxis");

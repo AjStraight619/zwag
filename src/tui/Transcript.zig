@@ -91,6 +91,7 @@ pub fn render(
     const max_scroll: usize = if (total_h > body.height) total_h - body.height else 0;
     if (self.auto_scroll) self.scroll_y = max_scroll;
     self.scroll_y = @min(self.scroll_y, max_scroll);
+    // Re-arm auto_scroll once the user scrolls back to the bottom.
     if (self.scroll_y >= max_scroll) self.auto_scroll = true;
 
     view.draw(body, .{ .y_off = @intCast(self.scroll_y) });

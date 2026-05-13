@@ -1,3 +1,6 @@
+//! Background worker for agent streaming (SSE). Spawned by
+//! start(), posts events back to the main thread via the Loop.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
@@ -108,10 +111,7 @@ fn onSse(self: *Stream, ev: stream_event.StreamEvent) anyerror!void {
             log.debug("content_block_start type={s}", .{b.content_block.type});
             const t = b.content_block.type;
             self.current_block =
-                if (std.mem.eql(u8, t, "thinking")) .thinking
-                else if (std.mem.eql(u8, t, "text")) .text
-                else if (std.mem.eql(u8, t, "tool_use")) .tool_use
-                else .none;
+                if (std.mem.eql(u8, t, "thinking")) .thinking else if (std.mem.eql(u8, t, "text")) .text else if (std.mem.eql(u8, t, "tool_use")) .tool_use else .none;
             if (self.current_block == .thinking) {
                 log.info("worker: entering thinking block", .{});
                 try self.loop.postEvent(.thinking_start);

@@ -71,6 +71,7 @@ pub fn run(self: *App) !void {
     }
 }
 
+/// Returns true when the app should exit (e.g., user pressed ctrl-c).
 fn handle(self: *App, event: Event) !bool {
     defer Loop.freeOwned(self.gpa, event);
     self.stream.dispatch(event);
@@ -166,6 +167,8 @@ fn submit(self: *App) !void {
     defer self.gpa.free(text);
     if (text.len == 0) return;
 
+    // TODO: Check if trimmed text starts with a / -> this should not get sent to the model (no-op on this code path and open a sub menu). Can catch earlier maybe?
+
     log.info("submit (len={d}) thinking_enabled=true", .{text.len});
     try self.conversation.appendUser(text);
     self.transcript.snapToBottom();
@@ -228,4 +231,3 @@ fn render(self: *App) !void {
 
     try self.vx.render(self.tty.writer());
 }
-
