@@ -187,13 +187,13 @@ fn submit(self: *App) !void {
     if (trimmed.len > 0 and trimmed[0] == '/') {
         const note = try std.fmt.allocPrint(self.gpa, "unknown command: {s}", .{trimmed});
         defer self.gpa.free(note);
-        try self.conversation.appendSystem(note);
+        try self.conversation.appendMessage(.system, note);
         self.transcript.snapToBottom();
         return;
     }
 
     log.info("submit (len={d}) thinking_enabled=true", .{text.len});
-    try self.conversation.appendUser(text);
+    try self.conversation.appendMessage(.user, text);
     self.transcript.snapToBottom();
 
     try self.stream.start(self.conversation.messages.items);

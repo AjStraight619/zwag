@@ -50,7 +50,7 @@ fn runHelp(app: *App) !void {
     }
     try buf.appendSlice(app.gpa, "\nShift+Enter or Alt+Enter inserts a newline. Enter submits.");
 
-    try app.conversation.appendSystem(buf.items);
+    try app.conversation.appendMessage(.system, buf.items);
     app.transcript.snapToBottom();
 }
 
