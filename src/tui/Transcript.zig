@@ -99,7 +99,7 @@ pub fn render(
 
 fn ensureView(self: *Transcript, width: u16, height: u16) !void {
     if (self.view) |*v| {
-        if (v.screen.width == width and v.screen.height >= height) return;
+        if (v.screen.width == width and v.screen.height >= height and v.screen.height <= height *| 2) return;
         v.deinit();
         self.view = null;
     }

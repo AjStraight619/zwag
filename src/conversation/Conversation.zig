@@ -33,34 +33,11 @@ pub fn beginAssistant(self: *Conversation) !void {
     try self.messages.append(self.gpa, .{ .role = .assistant, .content = .empty });
 }
 
+/// Mutates only the current (tail) assistant message; historic messages
+/// stay byte-stable so in-flight stream snapshots can borrow them.
 pub fn appendToken(self: *Conversation, text: []const u8) !void {
     std.debug.assert(self.messages.items.len > 0);
     const last = &self.messages.items[self.messages.items.len - 1];
     std.debug.assert(last.role == .assistant);
     try last.content.appendSlice(self.gpa, text);
-}
-
-const Serialized = struct {
-    messages: []const Message,
-};
-
-const Loaded = struct {
-    messages: []Message,
-};
-
-/// Caller frees returned bytes.
-pub fn toJsonAlloc(self: *const Conversation, gpa: Allocator) ![]u8 {
-    // TODO: std.json.Stringify.valueAlloc(gpa, Serialized{ .messages = self.messages.items }, .{})
-    _ = self;
-    _ = gpa;
-    return error.NotImplemented;
-}
-
-/// Returns a fully-owned Conversation. Bytes from `json` may be borrowed
-/// during parse but the returned messages all own their content.
-pub fn fromJson(gpa: Allocator, json: []const u8) !Conversation {
-    // TODO: parse Loaded, dupe each content into self.gpa, append.
-    _ = gpa;
-    _ = json;
-    return error.NotImplemented;
 }

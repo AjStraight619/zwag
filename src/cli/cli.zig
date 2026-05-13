@@ -2,8 +2,7 @@ const std = @import("std");
 const parser = @import("parser.zig");
 const manifest = @import("manifest");
 
-pub fn run(init: std.process.Init, args: []const [:0]const u8) !void {
-    _ = init;
+pub fn run(args: []const [:0]const u8) !void {
     const cmd = parser.parse(args) catch |err| switch (err) {
         error.UnknownCommand => {
             printUsage();

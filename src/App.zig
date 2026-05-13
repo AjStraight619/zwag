@@ -110,8 +110,7 @@ fn handle(self: *App, event: Event) !bool {
                 }
             }
 
-            if (key.codepoint == '\n' or
-                key.matches(vaxis.Key.enter, .{ .shift = true }) or
+            if (key.matches(vaxis.Key.enter, .{ .shift = true }) or
                 key.matches(vaxis.Key.enter, .{ .alt = true }))
             {
                 try self.input.insertSliceAtCursor("\n");

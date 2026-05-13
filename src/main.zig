@@ -17,6 +17,6 @@ pub fn main(init: std.process.Init) !void {
 
     const args = try init.minimal.args.toSlice(init.arena.allocator());
 
-    if (args.len > 1) return cli.run(init, args);
+    if (args.len > 1) return cli.run(args);
     return tui.run(init);
 }

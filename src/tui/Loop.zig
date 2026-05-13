@@ -8,10 +8,10 @@ const vaxis = @import("vaxis");
 pub const Event = union(enum) {
     key_press: vaxis.Key,
     winsize: vaxis.Winsize,
-    text_delta: []u8,
+    text_delta: []const u8,
     thinking_start,
     thinking_end,
-    err: []u8,
+    err: []const u8,
     stream_done,
 };
 

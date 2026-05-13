@@ -79,22 +79,22 @@ fn postOwnedEvent(self: *Stream, comptime field: []const u8, text: []const u8) !
 fn runStream(self: *Stream, history: []const Conversation.Message) anyerror!void {
     defer self.loop.postEvent(.stream_done) catch {};
 
-    const api_messages = try self.gpa.alloc(Client.Message, history.len);
-    defer self.gpa.free(api_messages);
-    for (history, 0..) |m, i| {
-        api_messages[i] = .{
-            .role = switch (m.role) {
-                .user => .user,
-                .assistant => .assistant,
-                .system => .assistant,
-            },
-            .content = m.content.items,
+    const messages = try self.gpa.alloc(Client.Message, history.len);
+    defer self.gpa.free(messages);
+    var dst: usize = 0;
+    for (history) |m| {
+        const role: Client.Role = switch (m.role) {
+            .user => .user,
+            .assistant => .assistant,
+            .system => continue,
         };
+        messages[dst] = .{ .role = role, .content = m.content.items };
+        dst += 1;
     }
 
     const req: Client.MessageRequest = .{
         .model = "claude-haiku-4-5-20251001",
-        .messages = api_messages,
+        .messages = messages[0..dst],
         .thinking = .{},
     };
 
