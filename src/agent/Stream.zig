@@ -17,6 +17,8 @@ const Stream = @This();
 
 pub const Phase = enum { idle, thinking, responding };
 
+pub const BlockKind = enum { none, text, thinking, tool_use };
+
 gpa: Allocator,
 io: Io,
 loop: *Loop,
@@ -25,7 +27,7 @@ client: Client,
 /// main-thread only
 phase: Phase = .idle,
 /// worker-thread only — which content_block kind we're currently inside
-current_block: enum { none, text, thinking, tool_use } = .none,
+current_block: BlockKind = .none,
 in_flight: ?Io.Future(anyerror!void) = null,
 
 pub fn init(gpa: Allocator, io: Io, loop: *Loop, api_key: []const u8) !Stream {
@@ -107,9 +109,7 @@ fn onSse(self: *Stream, ev: stream_event.StreamEvent) anyerror!void {
     switch (ev) {
         .content_block_start => |b| {
             log.debug("content_block_start type={s}", .{b.content_block.type});
-            const t = b.content_block.type;
-            self.current_block =
-                if (std.mem.eql(u8, t, "thinking")) .thinking else if (std.mem.eql(u8, t, "text")) .text else if (std.mem.eql(u8, t, "tool_use")) .tool_use else .none;
+            self.current_block = std.meta.stringToEnum(BlockKind, b.content_block.type) orelse .none;
             if (self.current_block == .thinking) {
                 log.info("worker: entering thinking block", .{});
                 try self.loop.postEvent(.thinking_start);

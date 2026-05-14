@@ -69,14 +69,13 @@ pub fn deinit(self: *App) void {
 pub fn run(self: *App) !void {
     while (true) {
         const ev = try self.loop.nextEvent();
-        if (try self.handle(ev)) return;
+        try self.handle(ev);
         if (self.should_exit) return;
         try self.render();
     }
 }
 
-/// Returns true when the app should exit (e.g., user pressed ctrl-c).
-fn handle(self: *App, event: Event) !bool {
+fn handle(self: *App, event: Event) !void {
     defer Loop.freeOwned(self.gpa, event);
     self.stream.dispatch(event);
     switch (event) {
@@ -84,29 +83,32 @@ fn handle(self: *App, event: Event) !bool {
             log.debug("key cp={d} shift={} ctrl={} alt={} text={?s}", .{
                 key.codepoint, key.mods.shift, key.mods.ctrl, key.mods.alt, key.text,
             });
-            if (key.matches('c', .{ .ctrl = true })) return true;
+            if (key.matches('c', .{ .ctrl = true })) {
+                self.should_exit = true;
+                return;
+            }
             if (key.matches(vaxis.Key.page_up, .{})) {
                 self.transcript.pageUp();
-                return false;
+                return;
             }
             if (key.matches(vaxis.Key.page_down, .{})) {
                 self.transcript.pageDown();
-                return false;
+                return;
             }
 
             if (self.mode == .picker) {
                 if (key.matches(vaxis.Key.up, .{})) {
                     self.picker.moveUp();
-                    return false;
+                    return;
                 }
                 if (key.matches(vaxis.Key.down, .{})) {
                     self.picker.moveDown();
-                    return false;
+                    return;
                 }
                 if (key.matches(vaxis.Key.escape, .{})) {
                     self.input.clearAndFree();
                     try self.refreshMode();
-                    return false;
+                    return;
                 }
                 if (key.matches(vaxis.Key.enter, .{})) {
                     if (self.picker.current()) |cmd| {
@@ -118,7 +120,7 @@ fn handle(self: *App, event: Event) !bool {
                             try self.completePick(cmd);
                         }
                     }
-                    return false;
+                    return;
                 }
             }
 
@@ -127,7 +129,7 @@ fn handle(self: *App, event: Event) !bool {
             {
                 try self.input.insertSliceAtCursor("\n");
                 try self.refreshMode();
-                return false;
+                return;
             }
             if (self.mode == .normal and key.matches(vaxis.Key.enter, .{})) {
                 try self.submit();
@@ -150,7 +152,6 @@ fn handle(self: *App, event: Event) !bool {
         },
         .stream_done => log.info("stream done", .{}),
     }
-    return false;
 }
 
 fn refreshMode(self: *App) !void {
