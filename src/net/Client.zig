@@ -104,7 +104,7 @@ pub fn streamMessages(
         else => {},
     }
 
-    var transfer_buf: [4096]u8 = undefined;
+    var transfer_buf: [64 * 1024]u8 = undefined;
     var decompress: std.http.Decompress = undefined;
     const reader = response.readerDecompressing(&transfer_buf, &decompress, self.decompress_buf);
 
