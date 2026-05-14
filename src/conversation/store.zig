@@ -9,11 +9,32 @@ const Conversation = @import("Conversation.zig");
 
 pub const SESSIONS_DIR = ".zwag/sessions";
 
-/// Caller frees the returned timestamp string. Format: "YYYYMMDDTHHMMSS".
-pub fn newId(gpa: Allocator) ![]u8 {
-    // TODO: format current time as a sortable string.
-    _ = gpa;
-    return error.NotImplemented;
+/// Caller frees the returned id string.
+/// Format: "YYYYMMDDTHHMMSS-xxxxxxxx" — UTC timestamp first (so `ls` sorts
+/// chronologically) plus 4 random hex bytes to avoid collisions within
+/// the same second.
+pub fn newId(io: Io, gpa: Allocator) ![]u8 {
+    const ts = Io.Timestamp.now(io, .real);
+    const secs: u64 = @intCast(@divTrunc(ts.nanoseconds, std.time.ns_per_s));
+    const epoch_secs: std.time.epoch.EpochSeconds = .{ .secs = secs };
+
+    const year_day = epoch_secs.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const day_secs = epoch_secs.getDaySeconds();
+
+    var rand_bytes: [4]u8 = undefined;
+    io.random(&rand_bytes);
+    const hex = std.fmt.bytesToHex(rand_bytes, .lower);
+
+    return std.fmt.allocPrint(gpa, "{d:0>4}{d:0>2}{d:0>2}T{d:0>2}{d:0>2}{d:0>2}-{s}", .{
+        year_day.year,
+        @intFromEnum(month_day.month),
+        @as(u6, month_day.day_index) + 1,
+        day_secs.getHoursIntoDay(),
+        day_secs.getMinutesIntoHour(),
+        day_secs.getSecondsIntoMinute(),
+        &hex,
+    });
 }
 
 /// Ensure SESSIONS_DIR exists under cwd. No-op if already present.

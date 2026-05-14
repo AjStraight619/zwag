@@ -17,6 +17,8 @@ const Stream = @This();
 
 pub const Phase = enum { idle, thinking, responding };
 
+/// Tag names mirror Anthropic's content_block.type strings exactly.
+/// Renaming these breaks std.meta.stringToEnum in onSse silently.
 pub const BlockKind = enum { none, text, thinking, tool_use };
 
 gpa: Allocator,
@@ -40,6 +42,8 @@ pub fn init(gpa: Allocator, io: Io, loop: *Loop, api_key: []const u8) !Stream {
 }
 
 pub fn deinit(self: *Stream) void {
+    // Future.cancel blocks until the worker reaches a cancellation point and
+    // completes — equivalent to await + cancel signal, not a fire-and-forget.
     if (self.in_flight) |*f| f.cancel(self.io) catch {};
     self.client.deinit();
 }
