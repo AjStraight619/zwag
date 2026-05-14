@@ -95,6 +95,10 @@ fn handle(self: *App, event: Event) !void {
                 self.transcript.pageDown();
                 return;
             }
+            if (key.matches(vaxis.Key.escape, .{}) and self.stream.isActive()) {
+                self.stream.cancel();
+                return;
+            }
 
             if (self.mode == .picker) {
                 if (key.matches(vaxis.Key.up, .{})) {

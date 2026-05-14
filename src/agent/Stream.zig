@@ -48,6 +48,10 @@ pub fn isActive(self: Stream) bool {
     return self.phase != .idle;
 }
 
+pub fn cancel(self: *Stream) void {
+    if (self.in_flight) |*f| f.cancel(self.io) catch {};
+}
+
 pub fn start(self: *Stream, history: []const Conversation.Message) !void {
     if (self.in_flight != null) return;
     self.phase = .thinking;
