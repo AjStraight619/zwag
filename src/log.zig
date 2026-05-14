@@ -30,17 +30,17 @@ pub fn write(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (state == null) return;
-
-    const s = &state.?;
-
     const level_txt = comptime level.asText();
     const scope_part = comptime if (scope == .default) ": " else " (" ++ @tagName(scope) ++ "): ";
 
     var buf: [8192]u8 = undefined;
     const out = std.fmt.bufPrint(&buf, level_txt ++ scope_part ++ format ++ "\n", args) catch return;
 
-    s.mutex.lockUncancelable(s.io);
-    defer s.mutex.unlock(s.io);
-    s.file.writeStreamingAll(s.io, out) catch return;
+    if (state) |*s| {
+        s.mutex.lockUncancelable(s.io);
+        defer s.mutex.unlock(s.io);
+        s.file.writeStreamingAll(s.io, out) catch return;
+    } else {
+        std.debug.print("{s}", .{out});
+    }
 }
