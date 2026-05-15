@@ -107,7 +107,9 @@ fn runStream(self: *Stream, history: []const Conversation.Message) anyerror!void
     };
 
     self.client.streamMessages(req, self, onSse) catch |err| {
-        self.postOwnedEvent("err", @errorName(err)) catch {};
+        if (err != error.Canceled) {
+            self.postOwnedEvent("err", @errorName(err)) catch {};
+        }
         return err;
     };
 }

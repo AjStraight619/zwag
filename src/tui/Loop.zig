@@ -45,3 +45,10 @@ pub fn nextEvent(self: *Loop) !Event {
 pub fn postEvent(self: *Loop, event: Event) !void {
     return self.inner.postEvent(event);
 }
+
+/// Drain queued events without processing them, freeing heap payloads.
+/// Use during shutdown so events posted by the worker after cancel
+/// (e.g. a final err event) don't leak.
+pub fn drain(self: *Loop, gpa: Allocator) void {
+    while (self.inner.tryEvent() catch null) |ev| freeOwned(gpa, ev);
+}

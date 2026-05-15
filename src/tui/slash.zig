@@ -3,12 +3,24 @@
 
 const std = @import("std");
 const App = @import("../App.zig");
-const CommandPicker = @import("CommandPicker.zig");
 
 pub const Command = union(enum) {
     help,
     quit,
     clear,
+};
+
+pub const Spec = struct {
+    name: []const u8,
+    desc: []const u8,
+    tag: Command,
+};
+
+/// Single source of truth — picker UI and parser both read from here.
+pub const all = [_]Spec{
+    .{ .name = "/help", .desc = "Show available commands", .tag = .help },
+    .{ .name = "/clear", .desc = "Reset the conversation", .tag = .clear },
+    .{ .name = "/quit", .desc = "Exit zwag", .tag = .quit },
 };
 
 pub fn parse(text: []const u8) ?Command {
@@ -17,9 +29,9 @@ pub fn parse(text: []const u8) ?Command {
     const end = std.mem.indexOfAny(u8, after_slash, " \t\n") orelse after_slash.len;
     const name = after_slash[0..end];
 
-    if (std.ascii.eqlIgnoreCase(name, "help")) return .help;
-    if (std.ascii.eqlIgnoreCase(name, "quit")) return .quit;
-    if (std.ascii.eqlIgnoreCase(name, "clear")) return .clear;
+    for (all) |spec| {
+        if (std.ascii.eqlIgnoreCase(spec.name[1..], name)) return spec.tag;
+    }
     return null;
 }
 
@@ -36,16 +48,16 @@ fn runHelp(app: *App) !void {
     defer buf.deinit(app.gpa);
 
     var max_name: usize = 0;
-    for (CommandPicker.builtins) |cmd| {
-        if (cmd.name.len > max_name) max_name = cmd.name.len;
+    for (all) |spec| {
+        if (spec.name.len > max_name) max_name = spec.name.len;
     }
 
     try buf.appendSlice(app.gpa, "Available commands:\n");
-    for (CommandPicker.builtins) |cmd| {
+    for (all) |spec| {
         try buf.appendSlice(app.gpa, "  ");
-        try buf.appendSlice(app.gpa, cmd.name);
-        for (cmd.name.len..max_name + 2) |_| try buf.append(app.gpa, ' ');
-        try buf.appendSlice(app.gpa, cmd.desc);
+        try buf.appendSlice(app.gpa, spec.name);
+        for (spec.name.len..max_name + 2) |_| try buf.append(app.gpa, ' ');
+        try buf.appendSlice(app.gpa, spec.desc);
         try buf.append(app.gpa, '\n');
     }
     try buf.appendSlice(app.gpa, "\nShift+Enter or Alt+Enter inserts a newline. Enter submits.");

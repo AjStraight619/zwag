@@ -19,6 +19,12 @@ const App = @This();
 
 pub const Mode = enum { normal, picker };
 
+const picker_commands: [slash.all.len]CommandPicker.Command = blk: {
+    var arr: [slash.all.len]CommandPicker.Command = undefined;
+    for (slash.all, 0..) |spec, i| arr[i] = .{ .name = spec.name, .desc = spec.desc };
+    break :blk arr;
+};
+
 gpa: Allocator,
 io: Io,
 tty: *vaxis.Tty,
@@ -53,13 +59,14 @@ pub fn init(
         .stream = try Stream.init(gpa, io, loop, api_key),
         .input = .init(gpa),
         .conversation = .init(gpa),
-        .picker = try CommandPicker.init(gpa, &CommandPicker.builtins),
+        .picker = try CommandPicker.init(gpa, &picker_commands),
         .transcript = .{ .gpa = gpa },
     };
 }
 
 pub fn deinit(self: *App) void {
     self.stream.deinit();
+    self.loop.drain(self.gpa);
     self.input.deinit();
     self.picker.deinit();
     self.conversation.deinit();

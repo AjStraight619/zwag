@@ -11,12 +11,6 @@ pub const Command = struct {
     desc: []const u8,
 };
 
-pub const builtins = [_]Command{
-    .{ .name = "/help", .desc = "Show available commands" },
-    .{ .name = "/clear", .desc = "Clear the conversation transcript" },
-    .{ .name = "/quit", .desc = "Exit zwag" },
-};
-
 gpa: Allocator,
 all: []const Command,
 filtered: std.ArrayList(usize) = .empty,
