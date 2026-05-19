@@ -19,12 +19,6 @@ const App = @This();
 
 pub const Mode = enum { normal, picker };
 
-const picker_commands: [slash.all.len]CommandPicker.Command = blk: {
-    var arr: [slash.all.len]CommandPicker.Command = undefined;
-    for (slash.all, 0..) |spec, i| arr[i] = .{ .name = spec.name, .desc = spec.desc };
-    break :blk arr;
-};
-
 gpa: Allocator,
 io: Io,
 tty: *vaxis.Tty,
@@ -59,7 +53,7 @@ pub fn init(
         .stream = try Stream.init(gpa, io, loop, api_key),
         .input = .init(gpa),
         .conversation = .init(gpa),
-        .picker = try CommandPicker.init(gpa, &picker_commands),
+        .picker = try CommandPicker.init(gpa, &slash.picker_view),
         .transcript = .{ .gpa = gpa },
     };
 }
@@ -126,7 +120,7 @@ fn handle(self: *App, event: Event) !void {
                         if (slash.parse(cmd.name)) |sc| {
                             self.input.clearAndFree();
                             try self.refreshMode();
-                            try slash.dispatch(self, sc);
+                            try self.handleSlash(sc);
                         } else {
                             try self.completePick(cmd);
                         }
@@ -165,6 +159,43 @@ fn handle(self: *App, event: Event) !void {
     }
 }
 
+fn handleSlash(self: *App, cmd: slash.Command) !void {
+    switch (cmd) {
+        .quit => self.should_exit = true,
+        .help => try self.appendHelpMessage(),
+        .clear => try self.resetConversation(),
+    }
+}
+
+fn appendHelpMessage(self: *App) !void {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(self.gpa);
+
+    var max_name: usize = 0;
+    for (slash.all) |spec| {
+        if (spec.name.len > max_name) max_name = spec.name.len;
+    }
+
+    try buf.appendSlice(self.gpa, "Available commands:\n");
+    for (slash.all) |spec| {
+        try buf.appendSlice(self.gpa, "  ");
+        try buf.appendSlice(self.gpa, spec.name);
+        for (spec.name.len..max_name + 2) |_| try buf.append(self.gpa, ' ');
+        try buf.appendSlice(self.gpa, spec.desc);
+        try buf.append(self.gpa, '\n');
+    }
+    try buf.appendSlice(self.gpa, "\nShift+Enter or Alt+Enter inserts a newline. Enter submits.");
+
+    try self.conversation.appendMessage(.system, buf.items);
+    self.transcript.snapToBottom();
+}
+
+fn resetConversation(self: *App) !void {
+    self.conversation.deinit();
+    self.conversation = .init(self.gpa);
+    self.transcript.snapToBottom();
+}
+
 fn refreshMode(self: *App) !void {
     const buf = self.input.buf.items;
     const in_name = buf.len > 0 and buf[0] == '/' and std.mem.indexOfAny(u8, buf, " \t\n") == null;
@@ -193,7 +224,7 @@ fn submit(self: *App) !void {
     const trimmed = std.mem.trim(u8, text, " \t\n");
 
     if (slash.parse(trimmed)) |cmd| {
-        try slash.dispatch(self, cmd);
+        try self.handleSlash(cmd);
         return;
     }
     if (trimmed.len > 0 and trimmed[0] == '/') {

@@ -1,8 +1,8 @@
-//! Slash command parser and dispatcher for the TUI input box.
-//! Intercepts `/foo` typed at the prompt before it reaches the API.
+//! Slash command parser. Pure data + parse — no side effects, no App import.
+//! App.handleSlash dispatches the resulting Command.
 
 const std = @import("std");
-const App = @import("../App.zig");
+const CommandPicker = @import("CommandPicker.zig");
 
 pub const Command = union(enum) {
     help,
@@ -23,6 +23,13 @@ pub const all = [_]Spec{
     .{ .name = "/quit", .desc = "Exit zwag", .tag = .quit },
 };
 
+/// Picker-shaped view of `all`, suitable to hand to CommandPicker.init.
+pub const picker_view: [all.len]CommandPicker.Command = blk: {
+    var arr: [all.len]CommandPicker.Command = undefined;
+    for (all, 0..) |spec, i| arr[i] = .{ .name = spec.name, .desc = spec.desc };
+    break :blk arr;
+};
+
 pub fn parse(text: []const u8) ?Command {
     if (text.len == 0 or text[0] != '/') return null;
     const after_slash = text[1..];
@@ -33,43 +40,6 @@ pub fn parse(text: []const u8) ?Command {
         if (std.ascii.eqlIgnoreCase(spec.name[1..], name)) return spec.tag;
     }
     return null;
-}
-
-pub fn dispatch(app: *App, cmd: Command) !void {
-    switch (cmd) {
-        .quit => app.should_exit = true,
-        .help => try runHelp(app),
-        .clear => try runClear(app),
-    }
-}
-
-fn runHelp(app: *App) !void {
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(app.gpa);
-
-    var max_name: usize = 0;
-    for (all) |spec| {
-        if (spec.name.len > max_name) max_name = spec.name.len;
-    }
-
-    try buf.appendSlice(app.gpa, "Available commands:\n");
-    for (all) |spec| {
-        try buf.appendSlice(app.gpa, "  ");
-        try buf.appendSlice(app.gpa, spec.name);
-        for (spec.name.len..max_name + 2) |_| try buf.append(app.gpa, ' ');
-        try buf.appendSlice(app.gpa, spec.desc);
-        try buf.append(app.gpa, '\n');
-    }
-    try buf.appendSlice(app.gpa, "\nShift+Enter or Alt+Enter inserts a newline. Enter submits.");
-
-    try app.conversation.appendMessage(.system, buf.items);
-    app.transcript.snapToBottom();
-}
-
-fn runClear(app: *App) !void {
-    app.conversation.deinit();
-    app.conversation = .init(app.gpa);
-    app.transcript.snapToBottom();
 }
 
 test "parse recognizes built-in commands" {
